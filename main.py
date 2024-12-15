@@ -139,6 +139,5 @@ async def on_message_delete(message):
         await logging_channel.send(embed=embed)
 
 
-
 # Run the bot
 bot.run('YOUR_BOT_TOKEN')
