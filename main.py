@@ -1,130 +1,196 @@
+#MADE BY Coder-Boner (https://github.com/coder-boner/)
+#Repo (https://github.com/coder-boner/Central-Network-Discord-Bot)
+
+import os
 import discord
 from discord.ext import commands
-import os
-import datetime
-from datetime import date
+from discord import app_commands
+from datetime import datetime, timedelta
 
-intents = discord.Intents.all()
+# Replace with your bot token and target moderation logs channel ID
+BOT_TOKEN = "BOT_TOKEN"
+MOD_LOG_CHANNEL_ID = 123456789012345678
+
+intents = discord.Intents.default()
+intents.messages = True
+intents.message_content = True
+intents.guilds = True
+intents.guild_messages = True
+intents.bans = True
+intents.moderation = True
 intents.members = True
 
-bot = commands.Bot(command_prefix='!', intents=intents)
+class MyBot(commands.Bot):
+    def __init__(self):
+        super().__init__(command_prefix="/", intents=intents)
 
-@bot.event
-async def on_message(message):
-    if message.author == bot.user:
-        return
+    async def setup_hook(self):
+        # Sync commands to the server
+        await self.tree.sync()
 
-    # Create the folder structure if it doesn't exist
-    channel_folder = f"logs/{message.channel.name}"
-    if not os.path.exists(channel_folder):
-        os.makedirs(channel_folder)
+bot = MyBot()
 
-    # Get the current date
-    today = date.today()
-    log_file = f"{channel_folder}/{today}.txt"
-
-    # Log the message
-    with open(log_file, "a", encoding="utf-8") as f:
-        f.write(f"[{message.created_at}] {message.author}: {message.content}\n")
-
-    await bot.process_commands(message)
-
-@bot.event
-async def on_message_edit(before, after):
-    if before.author == bot.user:
-        return
-
-    # Create the folder structure if it doesn't exist
-    channel_folder = f"logs/{before.channel.name}"
-    if not os.path.exists(channel_folder):
-        os.makedirs(channel_folder)
-
-    # Get the current date
-    today = date.today()
-    log_file = f"{channel_folder}/{today}.txt"
-
-    # Log the message edit
-    with open(log_file, "a", encoding="utf-8") as f:
-        f.write(f"[{before.created_at}] {before.author} edited message: {before.content} -> {after.content}\n")
-
-@bot.event
-async def on_message_delete(message):
-    if message.author == bot.user:
-        return
-
-    # Create the folder structure if it doesn't exist
-    channel_folder = f"logs/{message.channel.name}"
-    if not os.path.exists(channel_folder):
-        os.makedirs(channel_folder)
-
-    # Get the current date
-    today = date.today()
-    log_file = f"{channel_folder}/{today}.txt"
-
-    # Log the message deletion
-    with open(log_file, "a", encoding="utf-8") as f:
-        f.write(f"[{message.created_at}] {message.author} deleted message: {message.content}\n")
-
-log_channel_id = 1234567890  # Replace with your log channel ID
+# Create a folder for storing logs
+LOGS_DIR = "logs"
+os.makedirs(LOGS_DIR, exist_ok=True)
 
 @bot.event
 async def on_ready():
-    global log_channel
-    log_channel = bot.get_channel(log_channel_id)
-    print(f'Logged in as {bot.user.name}')
+    print(f"Bot logged in as {bot.user}")
 
-@bot.command()
-@commands.has_permissions(administrator=True)
-async def ban(ctx, member: discord.Member, *, reason=None):
-    await member.ban(reason=reason)
-    embed = discord.Embed(title="Moderation Log", color=0xFF0000)
-    embed.add_field(name="Action", value="Ban", inline=False)
-    embed.add_field(name="User", value=member.mention, inline=False)
-    embed.add_field(name="Moderator", value=ctx.author.mention, inline=False)
-    if reason:
-        embed.add_field(name="Reason", value=reason, inline=False)
-    await log_channel.send(embed=embed)
+    async def setup_hook(self):
+        await self.tree.sync()
+        print("Commands synced successfully!")
 
-@bot.command()
-@commands.has_permissions(administrator=True)
-async def unban(ctx, *, member):
-    banned_users = await ctx.guild.bans()
-    member_name, member_discriminator = member.split('#')
 
-    for ban in banned_users:
-        user = ban.user
+# Utility function to write messages to a log file
+def write_to_log(channel_name, date, content):
+    channel_dir = os.path.join(LOGS_DIR, channel_name)
+    os.makedirs(channel_dir, exist_ok=True)
+    log_file_path = os.path.join(channel_dir, f"{date}.txt")
+    with open(log_file_path, "a", encoding="utf-8") as log_file:
+        log_file.write(content + "\n")
 
-        if (user.name, user.discriminator) == (member_name, member_discriminator):
-            await ctx.guild.unban(user)
-            embed = discord.Embed(title="Moderation Log", color=0xFF0000)
-            embed.add_field(name="Action", value="Unban", inline=False)
-            embed.add_field(name="User", value=user.mention, inline=False)
-            embed.add_field(name="Moderator", value=ctx.author.mention, inline=False)
-            await log_channel.send(embed=embed)
-            return
+# Log messages
+@bot.event
+async def on_message(message):
+    if message.author.bot:
+        return
 
-@bot.command()
-@commands.has_permissions(administrator=True)
-async def kick(ctx, member: discord.Member, *, reason=None):
+    channel_name = message.channel.name
+    date = datetime.now().strftime("%Y-%m-%d")
+    log_entry = f"[{datetime.now().strftime('%H:%M:%S')}] {message.author}: {message.content}"
+    write_to_log(channel_name, date, log_entry)
+
+# Log deleted messages
+@bot.event
+async def on_message_delete(message):
+    if message.author.bot:
+        return
+
+    channel_name = message.channel.name
+    date = datetime.now().strftime("%Y-%m-%d")
+    log_entry = f"[{datetime.now().strftime('%H:%M:%S')}] {message.author}: MESSAGE DELETED: {message.content}"
+    write_to_log(channel_name, date, log_entry)
+
+    # Send moderation log
+    channel = bot.get_channel(MOD_LOG_CHANNEL_ID)
+    if channel:
+        await channel.send(f"Message deleted in #{channel_name} by {message.author}: {message.content}")
+
+# Log member bans
+@bot.event
+async def on_member_ban(guild, user):
+    log_entry = f"[{datetime.now().strftime('%H:%M:%S')}] {user} was banned."
+    write_to_log("moderation", datetime.now().strftime("%Y-%m-%d"), log_entry)
+
+    # Send moderation log
+    channel = bot.get_channel(MOD_LOG_CHANNEL_ID)
+    if channel:
+        await channel.send(log_entry)
+
+# Log member unbans
+@bot.event
+async def on_member_unban(guild, user):
+    log_entry = f"[{datetime.now().strftime('%H:%M:%S')}] {user} was unbanned."
+    write_to_log("moderation", datetime.now().strftime("%Y-%m-%d"), log_entry)
+
+    # Send moderation log
+    channel = bot.get_channel(MOD_LOG_CHANNEL_ID)
+    if channel:
+        await channel.send(log_entry)
+
+# Log member kicks (requires integration with audit logs)
+@bot.event
+async def on_member_remove(member):
+    guild = member.guild
+    async for entry in guild.audit_logs(limit=1, action=discord.AuditLogAction.kick):
+        if entry.target == member:
+            log_entry = f"[{datetime.now().strftime('%H:%M:%S')}] {member} was kicked by {entry.user}."
+            write_to_log("moderation", datetime.now().strftime("%Y-%m-%d"), log_entry)
+
+            # Send moderation log
+            channel = bot.get_channel(MOD_LOG_CHANNEL_ID)
+            if channel:
+                await channel.send(log_entry)
+
+# Moderation commands
+@bot.tree.command(name="kick", description="Kick a member from the server")
+async def kick(interaction: discord.Interaction, member: discord.Member, reason: str = "No reason provided"):
     await member.kick(reason=reason)
-    embed = discord.Embed(title="Moderation Log", color=0xFF0000)
-    embed.add_field(name="Action", value="Kick", inline=False)
-    embed.add_field(name="User", value=member.mention, inline=False)
-    embed.add_field(name="Moderator", value=ctx.author.mention, inline=False)
-    if reason:
-        embed.add_field(name="Reason", value=reason, inline=False)
-    await log_channel.send(embed=embed)
+    log_entry = f"[{datetime.now().strftime('%H:%M:%S')}] {member} was kicked by {interaction.user} for: {reason}"
+    write_to_log("moderation", datetime.now().strftime("%Y-%m-%d"), log_entry)
 
-@bot.command()
-@commands.has_permissions(administrator=True)
-async def timeout(ctx, member: discord.Member, seconds: int, *, reason=None):
-    await member.timeout(discord.utils.parse_time(f"{seconds}s"), reason=reason)
-    embed = discord.Embed(title="Moderation Log", color=0xFF0000)
-    embed.add_field(name="Action", value="Timeout", inline=False)
-    embed.add_field(name="User", value=member.mention, inline=False)
-    embed.add_field(name="Moderator", value=ctx.author.mention, inline=False)
-    if reason:
-        embed.add_field(name="Reason", value=reason, inline=False)
-    await log_channel.send(embed=embed)
+    # Send moderation log
+    channel = bot.get_channel(MOD_LOG_CHANNEL_ID)
+    if channel:
+        await channel.send(log_entry)
+    await interaction.response.send_message(f"{member} has been kicked.")
 
-bot.run('YOUR_BOT_TOKEN')
+@bot.tree.command(name="ban", description="Ban a member from the server")
+async def ban(interaction: discord.Interaction, member: discord.Member, reason: str = "No reason provided"):
+    await member.ban(reason=reason)
+    log_entry = f"[{datetime.now().strftime('%H:%M:%S')}] {member} was banned by {interaction.user} for: {reason}"
+    write_to_log("moderation", datetime.now().strftime("%Y-%m-%d"), log_entry)
+
+    # Send moderation log
+    channel = bot.get_channel(MOD_LOG_CHANNEL_ID)
+    if channel:
+        await channel.send(log_entry)
+    await interaction.response.send_message(f"{member} has been banned.")
+
+@bot.tree.command(name="unban", description="Unban a member from the server")
+async def unban(interaction: discord.Interaction, user: discord.User):
+    guild = interaction.guild
+    await guild.unban(user)
+    log_entry = f"[{datetime.now().strftime('%H:%M:%S')}] {user} was unbanned by {interaction.user}."
+    write_to_log("moderation", datetime.now().strftime("%Y-%m-%d"), log_entry)
+
+    # Send moderation log
+    channel = bot.get_channel(MOD_LOG_CHANNEL_ID)
+    if channel:
+        await channel.send(log_entry)
+    await interaction.response.send_message(f"{user} has been unbanned.")
+
+@bot.tree.command(name="timeout", description="Timeout a member")
+async def timeout(interaction: discord.Interaction, member: discord.Member, duration: int, reason: str = "No reason provided"):
+    if not interaction.guild.me.guild_permissions.moderate_members:
+        await interaction.response.send_message(
+            "I do not have permission to timeout members.", ephemeral=True
+        )
+        return
+
+    until = discord.utils.utcnow() + timedelta(seconds=duration)
+    try:
+        await member.timeout(until, reason=reason)
+        log_entry = (
+            f"[{datetime.now().strftime('%H:%M:%S')}] {member} was timed out by "
+            f"{interaction.user} for {duration} seconds: {reason}"
+        )
+        write_to_log("moderation", datetime.now().strftime("%Y-%m-%d"), log_entry)
+
+        # Send moderation log
+        channel = bot.get_channel(MOD_LOG_CHANNEL_ID)
+        if channel:
+            await channel.send(log_entry)
+
+        await interaction.response.send_message(f"{member} has been timed out for {duration} seconds.")
+    except Exception as e:
+        await interaction.response.send_message(
+            f"Failed to timeout {member}: {str(e)}", ephemeral=True
+        )
+
+
+@bot.tree.command(name="remove_timeout", description="Remove a member's timeout")
+async def remove_timeout(interaction: discord.Interaction, member: discord.Member):
+    await member.timeout(None)
+    log_entry = f"[{datetime.now().strftime('%H:%M:%S')}] {member}'s timeout was removed by {interaction.user}."
+    write_to_log("moderation", datetime.now().strftime("%Y-%m-%d"), log_entry)
+
+    # Send moderation log
+    channel = bot.get_channel(MOD_LOG_CHANNEL_ID)
+    if channel:
+        await channel.send(log_entry)
+    await interaction.response.send_message(f"{member}'s timeout has been removed.")
+
+bot.run(BOT_TOKEN)
