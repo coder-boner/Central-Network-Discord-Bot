@@ -1,143 +1,130 @@
 import discord
 from discord.ext import commands
-import logging
+import os
 import datetime
+from datetime import date
 
-# Set up logging
-logging.basicConfig(filename='moderation.log', level=logging.INFO, format='%(asctime)s:%(levelname)s:%(message)s')
-
-# Set up the bot
-intents = discord.Intents.default()
+intents = discord.Intents.all()
 intents.members = True
-intents.messages = True
 
 bot = commands.Bot(command_prefix='!', intents=intents)
 
-# Event to indicate the bot is ready
-@bot.event
-async def on_ready():
-    print(f'{bot.user} has connected to Discord!')
-
-# Logging channel ID
-logging_channel_id = 1234567890  # Replace with your logging channel ID
-
-# Function to log to file and channel
-async def log_moderation(action, user, reason=None):
-    log_message = f'{action} - {user} - {reason if reason else "No reason provided"}'
-    logging.info(log_message)
-    logging_channel = bot.get_channel(logging_channel_id)
-    if logging_channel:
-        await logging_channel.send(log_message)
-
-# Moderation commands
-@bot.command(name='ban')
-async def ban(ctx, member: discord.Member, *, reason=None):
-    await member.ban(reason=reason)
-    await log_moderation('Ban', member, reason)
-
-@bot.command(name='kick')
-async def kick(ctx, member: discord.Member, *, reason=None):
-    await member.kick(reason=reason)
-    await log_moderation('Kick', member, reason)
-
-@bot.command(name='mute')
-async def mute(ctx, member: discord.Member, *, reason=None):
-    # Assuming you have a mute role set up
-    mute_role = discord.utils.get(ctx.guild.roles, name='Muted')
-    if mute_role:
-        await member.add_roles(mute_role, reason=reason)
-        await log_moderation('Mute', member, reason)
-    else:
-        await ctx.send('Mute role not found.')
-
-@bot.command(name='unmute')
-async def unmute(ctx, member: discord.Member, *, reason=None):
-    # Assuming you have a mute role set up
-    mute_role = discord.utils.get(ctx.guild.roles, name='Muted')
-    if mute_role:
-        await member.remove_roles(mute_role, reason=reason)
-        await log_moderation('Unmute', member, reason)
-    else:
-        await ctx.send('Mute role not found.')
-
-# Message deletion logging
-@bot.event
-async def on_message_delete(message):
-    if message.author.bot:
-        return
-    log_message = f'Message deleted - {message.author} - {message.content}'
-    logging.info(log_message)
-    logging_channel = bot.get_channel(logging_channel_id)
-    if logging_channel:
-        embed = discord.Embed(title='Message Deleted', description=log_message, timestamp=datetime.datetime.now())
-        embed.set_author(name=message.author, icon_url=message.author.avatar_url)
-        await logging_channel.send(embed=embed)
-
-import json
-
-# Load user data from JSON file
-def load_user_data():
-    try:
-        with open('user_data.json', 'r') as file:
-            return json.load(file)
-    except FileNotFoundError:
-        return {}
-
-# Save user data to JSON file
-def save_user_data(data):
-    with open('user_data.json', 'w') as file:
-        json.dump(data, file)
-
-# Initialize user data if not present
-user_data = load_user_data()
-
-# Function to update user levels
-def update_user_level(user_id, message):
-    global user_data
-    if user_id not in user_data:
-        user_data[user_id] = {'level': 0, 'experience': 0}
-    user_data[user_id]['experience'] += 1  # Adjust experience gain as needed
-    if user_data[user_id]['experience'] >= 100:  # Adjust level up threshold as needed
-        user_data[user_id]['level'] += 1
-        user_data[user_id]['experience'] = 0
-        save_user_data(user_data)
-        return True
-    save_user_data(user_data)
-    return False
-
-# Event to track messages and update levels
 @bot.event
 async def on_message(message):
-    if message.author.bot:
+    if message.author == bot.user:
         return
-    if update_user_level(message.author.id, message):
-        await message.channel.send(f'Congratulations {message.author.mention}, you leveled up!')
+
+    # Create the folder structure if it doesn't exist
+    channel_folder = f"logs/{message.channel.name}"
+    if not os.path.exists(channel_folder):
+        os.makedirs(channel_folder)
+
+    # Get the current date
+    today = date.today()
+    log_file = f"{channel_folder}/{today}.txt"
+
+    # Log the message
+    with open(log_file, "a", encoding="utf-8") as f:
+        f.write(f"[{message.created_at}] {message.author}: {message.content}\n")
+
     await bot.process_commands(message)
 
 @bot.event
 async def on_message_edit(before, after):
-    if before.author.bot:
+    if before.author == bot.user:
         return
-    log_message = f'Message edited - {before.author} - Before: {before.content} - After: {after.content}'
-    logging.info(log_message)
-    logging_channel = bot.get_channel(logging_channel_id)
-    if logging_channel:
-        embed = discord.Embed(title='Message Edited', description=log_message, timestamp=datetime.datetime.now())
-        embed.set_author(name=before.author, icon_url=before.author.avatar_url)
-        await logging_channel.send(embed=embed)
+
+    # Create the folder structure if it doesn't exist
+    channel_folder = f"logs/{before.channel.name}"
+    if not os.path.exists(channel_folder):
+        os.makedirs(channel_folder)
+
+    # Get the current date
+    today = date.today()
+    log_file = f"{channel_folder}/{today}.txt"
+
+    # Log the message edit
+    with open(log_file, "a", encoding="utf-8") as f:
+        f.write(f"[{before.created_at}] {before.author} edited message: {before.content} -> {after.content}\n")
 
 @bot.event
 async def on_message_delete(message):
-    if message.author.bot:
+    if message.author == bot.user:
         return
-    log_message = f'Message deleted - {message.author} - {message.content}'
-    logging.info(log_message)
-    logging_channel = bot.get_channel(logging_channel_id)
-    if logging_channel:
-        embed = discord.Embed(title='Message Deleted', description=log_message, timestamp=datetime.datetime.now())
-        embed.set_author(name=message.author, icon_url=message.author.avatar_url)
-        await logging_channel.send(embed=embed)
 
+    # Create the folder structure if it doesn't exist
+    channel_folder = f"logs/{message.channel.name}"
+    if not os.path.exists(channel_folder):
+        os.makedirs(channel_folder)
 
-# Run the bot
+    # Get the current date
+    today = date.today()
+    log_file = f"{channel_folder}/{today}.txt"
+
+    # Log the message deletion
+    with open(log_file, "a", encoding="utf-8") as f:
+        f.write(f"[{message.created_at}] {message.author} deleted message: {message.content}\n")
+
+log_channel_id = 1234567890  # Replace with your log channel ID
+
+@bot.event
+async def on_ready():
+    global log_channel
+    log_channel = bot.get_channel(log_channel_id)
+    print(f'Logged in as {bot.user.name}')
+
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def ban(ctx, member: discord.Member, *, reason=None):
+    await member.ban(reason=reason)
+    embed = discord.Embed(title="Moderation Log", color=0xFF0000)
+    embed.add_field(name="Action", value="Ban", inline=False)
+    embed.add_field(name="User", value=member.mention, inline=False)
+    embed.add_field(name="Moderator", value=ctx.author.mention, inline=False)
+    if reason:
+        embed.add_field(name="Reason", value=reason, inline=False)
+    await log_channel.send(embed=embed)
+
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def unban(ctx, *, member):
+    banned_users = await ctx.guild.bans()
+    member_name, member_discriminator = member.split('#')
+
+    for ban in banned_users:
+        user = ban.user
+
+        if (user.name, user.discriminator) == (member_name, member_discriminator):
+            await ctx.guild.unban(user)
+            embed = discord.Embed(title="Moderation Log", color=0xFF0000)
+            embed.add_field(name="Action", value="Unban", inline=False)
+            embed.add_field(name="User", value=user.mention, inline=False)
+            embed.add_field(name="Moderator", value=ctx.author.mention, inline=False)
+            await log_channel.send(embed=embed)
+            return
+
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def kick(ctx, member: discord.Member, *, reason=None):
+    await member.kick(reason=reason)
+    embed = discord.Embed(title="Moderation Log", color=0xFF0000)
+    embed.add_field(name="Action", value="Kick", inline=False)
+    embed.add_field(name="User", value=member.mention, inline=False)
+    embed.add_field(name="Moderator", value=ctx.author.mention, inline=False)
+    if reason:
+        embed.add_field(name="Reason", value=reason, inline=False)
+    await log_channel.send(embed=embed)
+
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def timeout(ctx, member: discord.Member, seconds: int, *, reason=None):
+    await member.timeout(discord.utils.parse_time(f"{seconds}s"), reason=reason)
+    embed = discord.Embed(title="Moderation Log", color=0xFF0000)
+    embed.add_field(name="Action", value="Timeout", inline=False)
+    embed.add_field(name="User", value=member.mention, inline=False)
+    embed.add_field(name="Moderator", value=ctx.author.mention, inline=False)
+    if reason:
+        embed.add_field(name="Reason", value=reason, inline=False)
+    await log_channel.send(embed=embed)
+
 bot.run('YOUR_BOT_TOKEN')
